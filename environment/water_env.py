@@ -1,4 +1,4 @@
-from simulator import WaterSimulator
+from environment.simulator import WaterSimulator
 from reward import calculate_reward
 
 
