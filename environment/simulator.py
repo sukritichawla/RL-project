@@ -1,7 +1,7 @@
 import random
-from state import WaterState
-from actions import Action
-
+from environment.state import WaterState
+from environment.actions import Action
+from environment.transition_model import TransitionModel
 
 class WaterSimulator:
 
@@ -69,3 +69,7 @@ class WaterSimulator:
             time_step=self.time_step
         )
         return self.state
+
+    def get_transition_model(self):
+        return TransitionModel().build()
+        

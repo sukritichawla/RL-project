@@ -1,5 +1,5 @@
 from environment.simulator import WaterSimulator
-from reward import calculate_reward
+from environment.reward import calculate_reward
 
 
 class WaterEnvironment:
@@ -40,3 +40,24 @@ class WaterEnvironment:
     def close(self):
 
         pass
+
+    def get_model(self):
+        """
+        Returns the transition model for DP algorithms.
+
+        Returns:
+            transition_model
+        """
+        return self.simulator.get_transition_model()
+
+    def discretize_state(self, state):
+
+        tank = state[0]
+
+        if tank < 35:
+            return 0
+
+        elif tank < 70:
+            return 1
+
+        return 2
