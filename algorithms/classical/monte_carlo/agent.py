@@ -1,13 +1,3 @@
-"""
-agent.py
---------
-Tabular, first-visit (or every-visit) Monte Carlo control with an
-epsilon-greedy behavior policy, as in Sutton & Barto chapter 5.
-
-Uses per-dimension bin counts (dim_bins) and known environment bounds
-from config/, auto-inferring only dimensions left as None (e.g. demand,
-which has no fixed range in env_config.py).
-"""
 
 import os
 import pickle
@@ -21,39 +11,26 @@ class MonteCarloAgent(BaseAgent):
     def __init__(self, state_size, action_size, config: MonteCarloConfig = None):
         super().__init__(state_size, action_size)
         self.config = config or MonteCarloConfig()
-
         self.gamma = self.config.gamma
         self.epsilon = self.config.epsilon_start
         self.epsilon_min = self.config.epsilon_min
         self.epsilon_decay = self.config.epsilon_decay
         self.first_visit = self.config.first_visit
-
         self.rng = np.random.default_rng(self.config.seed)
-
-        # Per-dimension bin counts (e.g. [5,5,5,2,2,5] — binary dims get 2 bins)
         self.dim_bins = self.config.dim_bins or [self.config.state_bins] * self.state_size
-
-        # state_bounds: list where each entry is (low, high) or None (auto-infer)
         raw_bounds = self.config.state_bounds or [None] * self.state_size
         self.state_bounds = list(raw_bounds)
         self._dims_to_infer = [i for i, b in enumerate(self.state_bounds) if b is None]
         self._bounds_finalized = len(self._dims_to_infer) == 0
         for i in self._dims_to_infer:
-            self.state_bounds[i] = (0.0, 1.0)  # placeholder until warmup ends
-
+            self.state_bounds[i] = (0.0, 1.0)  
         self._bound_samples = []
         self._episodes_seen = 0
-
-        # Q table shaped from per-dimension bin counts.
         q_shape = tuple(self.dim_bins) + (self.action_size,)
         self.Q = np.zeros(q_shape, dtype=np.float64)
         self.N = np.zeros(q_shape, dtype=np.int64)
 
         self._episode_buffer = []
-
-    # ======================================================================
-    # Bound auto-inference — only for dimensions with no known config bound
-    # ======================================================================
     def _update_bound_warmup(self, raw_state):
         if self._bounds_finalized:
             return
@@ -75,9 +52,6 @@ class MonteCarloAgent(BaseAgent):
                 for i, (lo, hi) in enumerate(self.state_bounds):
                     print(f"  dim {i}: ({lo:.2f}, {hi:.2f})  bins={self.dim_bins[i]}")
 
-    # ======================================================================
-    # Discretization
-    # ======================================================================
     def _discretize(self, raw_state):
         state_array = np.asarray(raw_state, dtype=np.float64).flatten()
         indices = []
@@ -89,10 +63,7 @@ class MonteCarloAgent(BaseAgent):
             idx = min(int(ratio * n_bins), n_bins - 1)
             indices.append(idx)
         return tuple(indices)
-
-    # ======================================================================
-    # BaseAgent interface
-    # ======================================================================
+    
     def select_action(self, state):
         self._update_bound_warmup(state)
         disc_state = self._discretize(state)
@@ -132,9 +103,6 @@ class MonteCarloAgent(BaseAgent):
     def _decay_epsilon(self):
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
-    # ======================================================================
-    # Persistence
-    # ======================================================================
     def save(self, filepath):
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
@@ -154,9 +122,6 @@ class MonteCarloAgent(BaseAgent):
         self.dim_bins = data["dim_bins"]
         self._bounds_finalized = True
 
-    # ======================================================================
-    # Notebook helpers
-    # ======================================================================
     def greedy_action(self, state):
         disc_state = self._discretize(state)
         q_values = self.Q[disc_state]
