@@ -1,1 +1,2 @@
 from .fixed_energy_q_learning import FixedEnergyQLearningAgent
+from .adaptive_energy_q_learning import AdaptiveEnergyQLearningAgent
