@@ -82,35 +82,39 @@ def run_main_comparison():
     return results, algorithms
 
 
+
 def run_ablation_study(env_factory):
     """
-    Ablation study: sweeps the energy-penalty weight in Fixed Energy
-    Q-Learning to show that AE-Q's adaptive weighting isn't just
-    reproducing one lucky fixed setting.
+    Ablation study: sweeps the learning rate (alpha) of
+    Fixed Energy Q-Learning.
 
-    Skipped with a message if Fixed Energy Q-Learning isn't available
-    yet, or if its constructor doesn't actually take `energy_weight`
-    (update PARAM_GRID / the kwarg name below to match the real
-    constructor once you confirm it).
+    Alpha is a supported constructor parameter of
+    FixedEnergyQLearningAgent.
     """
 
     try:
         from algorithms.energy_aware.fixed_energy_q_learning import FixedEnergyQLearningAgent
     except ImportError as e:
-        print(f"[ablation] Skipping ablation study (Fixed Energy Q-Learning not available yet): {e}")
+        print(
+            f"[ablation] Skipping ablation study "
+            f"(Fixed Energy Q-Learning not available yet): {e}"
+        )
         return None
 
+    # Alpha is a real parameter supported by FixedEnergyQLearningAgent
     PARAM_GRID = [
-        {"energy_weight": 0.0},
-        {"energy_weight": 0.25},
-        {"energy_weight": 0.5},
-        {"energy_weight": 1.0},
+        {"alpha": 0.05},
+        {"alpha": 0.10},
+        {"alpha": 0.20},
     ]
 
     try:
         ablation_results = run_ablation(
             agent_class=FixedEnergyQLearningAgent,
-            fixed_kwargs={"state_size": STATE_SIZE, "action_size": ACTION_SIZE},
+            fixed_kwargs={
+                "state_size": STATE_SIZE,
+                "action_size": ACTION_SIZE,
+            },
             param_grid=PARAM_GRID,
             env_factory=env_factory,
             episodes=EPISODES,
@@ -119,17 +123,26 @@ def run_ablation_study(env_factory):
             moving_average_window=MOVING_AVERAGE_WINDOW,
         )
     except TypeError as e:
-        print(f"[ablation] FixedEnergyQLearningAgent doesn't accept the kwargs in "
-              f"PARAM_GRID ({e}). Update PARAM_GRID in experiments/compare.py to "
-              f"match its real constructor.")
+        print(
+            f"[ablation] FixedEnergyQLearningAgent constructor "
+            f"doesn't accept the supplied parameters: {e}"
+        )
         return None
 
     print()
-    print("Ablation study: energy_weight sweep")
+    print("Ablation study: alpha sweep")
     print_summary(ablation_results)
 
-    export_all(ablation_results, output_dir="results/ablation")
-    plot_all(ablation_results, MOVING_AVERAGE_WINDOW, output_dir="results/ablation/plots")
+    export_all(
+        ablation_results,
+        output_dir="results/ablation"
+    )
+
+    plot_all(
+        ablation_results,
+        MOVING_AVERAGE_WINDOW,
+        output_dir="results/ablation/plots"
+    )
 
     return ablation_results
 
