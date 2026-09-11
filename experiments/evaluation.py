@@ -33,9 +33,15 @@ def aggregate_metrics(per_seed_metrics):
 
 
 def evaluate_algorithm(name, agent_factory, env_factory, episodes, max_steps,
-                        seeds, moving_average_window):
+                        seeds, moving_average_window, reward_fn=None):
     """
     Trains `name` once per seed and aggregates its metrics.
+
+    reward_fn: optional (env, base_reward) -> (reward, extra_info) override.
+        Required for Fixed Energy Q-Learning / AE-Q, which train on
+        rewards.fixed_energy_reward / rewards.adaptive_energy_reward
+        rather than the environment's baseline reward. See
+        experiments.runner.run_episode's docstring for details.
 
     Returns:
         {
@@ -49,7 +55,7 @@ def evaluate_algorithm(name, agent_factory, env_factory, episodes, max_steps,
 
     training_results = run_multi_seed(
         agent_factory, env_factory, episodes, max_steps, seeds,
-        collect_steps=True,
+        collect_steps=True, reward_fn=reward_fn,
     )
 
     per_seed_metrics = [
@@ -66,12 +72,19 @@ def evaluate_algorithm(name, agent_factory, env_factory, episodes, max_steps,
 
 
 def evaluate_all(algorithms, env_factory, episodes, max_steps, seeds,
-                  moving_average_window, verbose=True):
+                  moving_average_window, reward_fns=None, verbose=True):
     """
     algorithms: dict[name -> agent_factory callable, e.g. lambda: QLearningAgent(...)]
+    reward_fns: optional dict[name -> reward_fn] (see evaluate_algorithm).
+        Algorithms not present in this dict use the environment's own
+        baseline reward, which is correct for Q-Learning/SARSA but wrong
+        for Fixed Energy Q-Learning/AE-Q -- make sure those two are
+        covered here.
 
     Returns: dict[name -> evaluate_algorithm(...) result]
     """
+
+    reward_fns = reward_fns or {}
 
     results = {}
     for name, factory in algorithms.items():
@@ -80,7 +93,7 @@ def evaluate_all(algorithms, env_factory, episodes, max_steps, seeds,
                   f"({episodes} episodes each)...")
         results[name] = evaluate_algorithm(
             name, factory, env_factory, episodes, max_steps, seeds,
-            moving_average_window,
+            moving_average_window, reward_fn=reward_fns.get(name),
         )
     return results
 

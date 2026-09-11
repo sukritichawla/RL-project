@@ -27,28 +27,52 @@ from experiments.runner import run_training
 Q_TABLE_DIR = "results/q_tables"
 
 
+def _fixed_energy_reward_fn(env, base_reward):
+    from rewards.fixed_energy_reward import calculate_fixed_energy_reward
+    reward, energy = calculate_fixed_energy_reward(env.state)
+    return reward, {"energy": energy}
+
+
+def _adaptive_energy_reward_fn(env, base_reward):
+    from rewards.adaptive_energy_reward import calculate_adaptive_reward
+    reward, energy, lambda_t = calculate_adaptive_reward(env.state)
+    return reward, {"energy": energy, "lambda_t": lambda_t}
+
+
 def build_agent_classes():
     """Same graceful-degradation pattern as compare.py: energy-aware
-    agents are included automatically once Person 1's files exist."""
+    agents are included automatically once Person 1's files exist.
+
+    Returns:
+        classes:    dict[name -> agent class]
+        reward_fns: dict[name -> reward_fn], for the two agents that
+            must be trained on rewards.fixed_energy_reward /
+            rewards.adaptive_energy_reward rather than the
+            environment's baseline reward (see experiments.compare for
+            the full explanation).
+    """
 
     classes = {
         "Q-Learning": QLearningAgent,
         "SARSA": SARSAAgent,
     }
+    reward_fns = {}
 
     try:
         from algorithms.energy_aware.fixed_energy_q_learning import FixedEnergyQLearningAgent
         classes["Fixed Energy Q-Learning"] = FixedEnergyQLearningAgent
+        reward_fns["Fixed Energy Q-Learning"] = _fixed_energy_reward_fn
     except ImportError:
         pass
 
     try:
         from algorithms.energy_aware.adaptive_energy_q_learning import AdaptiveEnergyQLearningAgent
         classes["AE-Q"] = AdaptiveEnergyQLearningAgent
+        reward_fns["AE-Q"] = _adaptive_energy_reward_fn
     except ImportError:
         pass
 
-    return classes
+    return classes, reward_fns
 
 
 def q_table_path(algorithm_name):
@@ -56,7 +80,7 @@ def q_table_path(algorithm_name):
     return os.path.join(Q_TABLE_DIR, f"{safe_name}.npy")
 
 
-def get_agent(algorithm_name, agent_class, force_train, episodes):
+def get_agent(algorithm_name, agent_class, force_train, episodes, reward_fn=None):
     agent = agent_class(state_size=STATE_SIZE, action_size=ACTION_SIZE)
     path = q_table_path(algorithm_name)
 
@@ -72,6 +96,7 @@ def get_agent(algorithm_name, agent_class, force_train, episodes):
         episodes=episodes,
         max_steps=MAX_STEPS,
         seed=0,
+        reward_fn=reward_fn,
     )
     agent = result["agent"]
 
@@ -126,7 +151,7 @@ def run_demo(agent, env_factory, max_steps, delay=0.3):
 
 
 def main():
-    agent_classes = build_agent_classes()
+    agent_classes, reward_fns = build_agent_classes()
 
     parser = argparse.ArgumentParser(description="Live demo of a trained agent.")
     parser.add_argument("--algorithm", required=True, choices=list(agent_classes.keys()))
@@ -139,7 +164,8 @@ def main():
     args = parser.parse_args()
 
     agent_class = agent_classes[args.algorithm]
-    agent = get_agent(args.algorithm, agent_class, args.train, args.episodes)
+    reward_fn = reward_fns.get(args.algorithm)
+    agent = get_agent(args.algorithm, agent_class, args.train, args.episodes, reward_fn=reward_fn)
 
     run_demo(agent, WaterEnvironment, MAX_STEPS, delay=args.delay)
 

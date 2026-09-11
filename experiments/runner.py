@@ -22,6 +22,7 @@ they follow the same convention -- no changes needed here or to them.
 """
 
 import inspect
+import random
 
 import numpy as np
 
@@ -32,7 +33,7 @@ def _wants_next_action(update_fn):
     return "next_action" in params
 
 
-def run_episode(agent, env, max_steps, collect_steps=True):
+def run_episode(agent, env, max_steps, collect_steps=True, reward_fn=None):
     """
     Runs a single episode.
 
@@ -42,6 +43,21 @@ def run_episode(agent, env, max_steps, collect_steps=True):
     action from the current Q-values each step -- so pre-selecting it
     here changes nothing about their behavior or update targets, it only
     lets one loop serve both agent styles.
+
+    reward_fn: optional callable (env, base_reward) -> (reward, extra_info).
+        By default (None) the environment's own step() reward is used
+        unchanged -- correct for Q-Learning/SARSA, which train directly
+        on environment/reward.py's baseline reward.
+
+        Fixed Energy Q-Learning and AE-Q do NOT train on that baseline
+        reward -- their own train() methods call
+        rewards.fixed_energy_reward.calculate_fixed_energy_reward(env.state)
+        / rewards.adaptive_energy_reward.calculate_adaptive_reward(env.state)
+        instead, using env.state (the WaterState the environment just
+        transitioned into). Pass a reward_fn matching that for those
+        agents, or they'll silently be trained on the wrong signal.
+        extra_info (e.g. {"lambda_t": ...} for AE-Q) is merged into the
+        step's logged info dict for later inspection.
 
     Returns:
         total_reward (float)
@@ -64,7 +80,14 @@ def run_episode(agent, env, max_steps, collect_steps=True):
 
     for t in range(max_steps):
 
-        raw_next_state, reward, done, info = env.step(action)
+        raw_next_state, base_reward, done, info = env.step(action)
+
+        if reward_fn is not None:
+            reward, extra_info = reward_fn(env, base_reward)
+            info = {**info, **extra_info}
+        else:
+            reward = base_reward
+
         next_state = env.discretize_state(raw_next_state)
 
         next_action = None
@@ -102,13 +125,22 @@ def run_episode(agent, env, max_steps, collect_steps=True):
 
 
 def run_training(agent_factory, env_factory, episodes, max_steps,
-                  seed=None, collect_steps=False):
+                  seed=None, collect_steps=False, reward_fn=None):
     """
     Trains one fresh agent for `episodes` episodes on a fresh environment.
 
     agent_factory: () -> agent instance (bind state_size/action_size/etc.
         with functools.partial or a lambda before passing it in)
     env_factory:   () -> environment instance
+    reward_fn:     see run_episode's docstring.
+
+    Seeds BOTH np.random and the stdlib random module: environment/
+    simulator.py's step noise uses random.randint(...), and
+    Fixed/AdaptiveEnergyQLearningAgent.select_action() uses
+    random.random()/random.randrange() rather than numpy's RNG. Seeding
+    only np.random (as an earlier version of this file did) left the
+    environment's own noise, and those two agents' exploration,
+    unreproducible across "seeds".
 
     Returns:
         {
@@ -119,6 +151,7 @@ def run_training(agent_factory, env_factory, episodes, max_steps,
     """
 
     if seed is not None:
+        random.seed(seed)
         np.random.seed(seed)
 
     agent = agent_factory()
@@ -128,7 +161,9 @@ def run_training(agent_factory, env_factory, episodes, max_steps,
     episode_steps = [] if collect_steps else None
 
     for _ in range(episodes):
-        total_reward, steps = run_episode(agent, env, max_steps, collect_steps)
+        total_reward, steps = run_episode(
+            agent, env, max_steps, collect_steps, reward_fn=reward_fn
+        )
         episode_rewards.append(total_reward)
         if collect_steps:
             episode_steps.append(steps)
@@ -141,10 +176,10 @@ def run_training(agent_factory, env_factory, episodes, max_steps,
 
 
 def run_multi_seed(agent_factory, env_factory, episodes, max_steps, seeds,
-                    collect_steps=False):
+                    collect_steps=False, reward_fn=None):
     """
     Runs run_training once per seed. This is the entry point Commit 3
-    (multi-run evaluation / mean ± std) will build on directly.
+    (multi-run evaluation / mean ± std) builds on directly.
 
     Returns a list of result dicts (see run_training), each tagged with
     its seed.
@@ -154,7 +189,7 @@ def run_multi_seed(agent_factory, env_factory, episodes, max_steps, seeds,
     for seed in seeds:
         result = run_training(
             agent_factory, env_factory, episodes, max_steps,
-            seed=seed, collect_steps=collect_steps,
+            seed=seed, collect_steps=collect_steps, reward_fn=reward_fn,
         )
         result["seed"] = seed
         results.append(result)

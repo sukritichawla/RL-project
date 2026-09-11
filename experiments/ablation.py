@@ -14,16 +14,23 @@ from experiments.evaluation import evaluate_algorithm, aggregate_metrics
 
 def run_ablation(agent_class, fixed_kwargs, param_grid, env_factory,
                   episodes, max_steps, seeds, moving_average_window,
-                  name_fn=None, verbose=True):
+                  reward_fn=None, name_fn=None, verbose=True):
     """
     agent_class:  the agent class to sweep, e.g. FixedEnergyQLearningAgent
     fixed_kwargs: dict of kwargs held constant across all configurations
                   (e.g. {"state_size": 3, "action_size": 2})
     param_grid:   list of dicts, each holding the kwargs being varied for
                   one configuration, e.g.
-                      [{"energy_weight": 0.0},
-                       {"energy_weight": 0.5},
-                       {"energy_weight": 1.0}]
+                      [{"alpha": 0.05}, {"alpha": 0.1}, {"alpha": 0.2}]
+    reward_fn:    optional (env, base_reward) -> (reward, extra_info).
+                  Required if agent_class is Fixed/AdaptiveEnergyQLearningAgent
+                  -- those train on rewards.fixed_energy_reward /
+                  rewards.adaptive_energy_reward, not the environment's
+                  baseline reward. Same reward_fn is used for every
+                  configuration in param_grid (it doesn't vary per-config
+                  unless the parameter being swept lives inside the
+                  reward function itself, e.g. BASE_LAMBDA/ALPHA/BETA --
+                  see compare.py for that case).
     name_fn:      optional function(varied_kwargs) -> str label. Defaults
                   to a comma-joined "key=value" string.
 
@@ -47,7 +54,7 @@ def run_ablation(agent_class, fixed_kwargs, param_grid, env_factory,
 
         results[label] = evaluate_algorithm(
             label, agent_factory, env_factory, episodes, max_steps, seeds,
-            moving_average_window,
+            moving_average_window, reward_fn=reward_fn,
         )
 
     return results
