@@ -59,18 +59,6 @@ from experiments.config import (
 Q_TABLE_DIR = "results/q_tables"
 
 
-def _fixed_energy_reward_fn(env, base_reward):
-    from rewards.fixed_energy_reward import calculate_fixed_energy_reward
-    reward, energy = calculate_fixed_energy_reward(env.state)
-    return reward, {"energy": energy}
-
-
-def _adaptive_energy_reward_fn(env, base_reward):
-    from rewards.adaptive_energy_reward import calculate_adaptive_reward
-    reward, energy, lambda_t = calculate_adaptive_reward(env.state)
-    return reward, {"energy": energy, "lambda_t": lambda_t}
-
-
 ALGORITHMS = {
     "1": ("Q-Learning", QLearningAgent),
     "2": ("SARSA", SARSAAgent),
@@ -231,28 +219,68 @@ def train_energy_agent(agent, episodes):
     print("Training complete.")
 
 
-def get_agent(algorithm_name, agent_class, force_train, episodes):
-    agent = agent_class(state_size=STATE_SIZE, action_size=ACTION_SIZE)
-    path = q_table_path(algorithm_name)
+def load_or_train_agent(algorithm_name, agent_class):
+    """
+    Q-Learning and SARSA use existing saved Q-tables when available.
 
-    if not force_train and os.path.exists(path):
-        print(f"Loading saved Q-table from {path}")
-        agent.load(path)
+    Energy-aware agents are trained in memory because their current
+    implementations do not provide save/load methods.
+    """
+
+    agent = agent_class(
+        state_size=STATE_SIZE,
+        action_size=ACTION_SIZE
+    )
+
+    if algorithm_name == "Q-Learning":
+
+        path = os.path.join(
+            Q_TABLE_DIR,
+            "q-learning.npy"
+        )
+
+        if os.path.exists(path):
+
+            print()
+            print("Loading existing Q-Learning Q-table...")
+            agent.load(path)
+            return agent
+
+        train_standard_agent(
+            agent,
+            WaterEnvironment(),
+            EPISODES
+        )
+
         return agent
 
-    print(f"Training {algorithm_name} for {episodes} episodes before demo...")
-    result = run_training(
-        agent_factory=lambda: agent_class(state_size=STATE_SIZE, action_size=ACTION_SIZE),
-        env_factory=WaterEnvironment,
-        episodes=episodes,
-        max_steps=MAX_STEPS,
-        seed=0,
-    )
-    agent = result["agent"]
+    if algorithm_name == "SARSA":
 
-    os.makedirs(Q_TABLE_DIR, exist_ok=True)
-    agent.save(path)
-    print(f"Saved Q-table to {path}")
+        path = os.path.join(
+            Q_TABLE_DIR,
+            "sarsa.npy"
+        )
+
+        if os.path.exists(path):
+
+            print()
+            print("Loading existing SARSA Q-table...")
+            agent.load(path)
+            return agent
+
+        train_standard_agent(
+            agent,
+            WaterEnvironment(),
+            EPISODES
+        )
+
+        return agent
+
+    # Energy-aware agents
+    train_energy_agent(
+        agent,
+        EPISODES
+    )
 
     return agent
 
@@ -646,22 +674,103 @@ def run_live_demo(
 
 
 def main():
-    agent_classes = build_agent_classes()
 
-    parser = argparse.ArgumentParser(description="Live demo of a trained agent.")
-    parser.add_argument("--algorithm", required=True, choices=list(agent_classes.keys()))
-    parser.add_argument("--train", action="store_true",
-                         help="Force retraining instead of loading a saved Q-table.")
-    parser.add_argument("--episodes", type=int, default=EPISODES,
-                         help="Episodes to train for if training is needed.")
-    parser.add_argument("--delay", type=float, default=0.3,
-                         help="Seconds to pause between steps.")
-    args = parser.parse_args()
+    while True:
 
-    agent_class = agent_classes[args.algorithm]
-    agent = get_agent(args.algorithm, agent_class, args.train, args.episodes)
+        selected = select_algorithm()
 
-    run_demo(agent, WaterEnvironment, MAX_STEPS, delay=args.delay)
+        if selected is None:
+            clear_screen()
+            print()
+            print("Exiting demo.")
+            print()
+            return
+
+        algorithm_name, agent_class = selected
+
+        clear_screen()
+        print_title()
+
+        print()
+        print(f"Selected: {algorithm_name}")
+
+        print()
+        print("Training/loading agent...")
+        print()
+
+        agent = load_or_train_agent(
+            algorithm_name,
+            agent_class
+        )
+
+        print()
+        print("Agent ready.")
+
+        input(
+            "\nPress ENTER to start the live demonstration..."
+        )
+
+        # ----------------------------------------------------------
+        # Ask demo settings
+        # ----------------------------------------------------------
+
+        while True:
+
+            steps_input = input(
+                "\nNumber of demo steps [50]: "
+            ).strip()
+
+            if steps_input == "":
+                demo_steps = 50
+                break
+
+            try:
+                demo_steps = int(steps_input)
+
+                if demo_steps > 0:
+                    break
+
+            except ValueError:
+                pass
+
+            print(
+                "Please enter a positive integer."
+            )
+
+        while True:
+
+            delay_input = input(
+                "Delay between steps in seconds [0.5]: "
+            ).strip()
+
+            if delay_input == "":
+                delay = 0.5
+                break
+
+            try:
+                delay = float(delay_input)
+
+                if delay >= 0:
+                    break
+
+            except ValueError:
+                pass
+
+            print(
+                "Please enter a non-negative number."
+            )
+
+        run_live_demo(
+            agent=agent,
+            algorithm_name=algorithm_name,
+            steps=demo_steps,
+            delay=delay
+        )
+
+        print()
+        input(
+            "Press ENTER to return to algorithm selection..."
+        )
 
 
 if __name__ == "__main__":
